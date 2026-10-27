@@ -1,0 +1,66 @@
+esphome:
+  name: grasscutter
+  friendly_name: GrassCutter
+
+esp8266:
+  board: nodemcuv2
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: !secret api_encryption_key
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: !secret wifi_ap_ssid
+    password: !secret wifi_ap_password
+
+captive_portal:
+
+
+sensor:
+  - platform: adc
+    pin: A0
+    name: "Battery Voltage ADC"
+    id: battery_adc
+    update_interval: 1s
+    filters:
+      - multiply: 58.5  # scale to actual voltage assuming 3.0V = 58.5V
+    unit_of_measurement: "V"
+
+output:
+  - platform: esp8266_pwm
+    pin: D1
+    frequency: 1000 Hz
+    id: pwm_output
+
+light:
+  - platform: monochromatic
+    output: pwm_output
+    id: battery_gauge_driver
+    name: "Analog Gauge PWM Driver"
+    internal: true  # <--- this hides it from Home Assistant
+
+interval:
+  - interval: 1s
+    then:
+      - lambda: |-
+          float batt = id(battery_adc).state;
+          float pct = (batt - 10.11) / (12.0 - 10.11);
+          pct = std::max(0.0f, std::min(1.0f, pct));  // clamp to 0–1
+
+          auto call = id(battery_gauge_driver).make_call();
+          call.set_state(true);  // ensure light is ON
+          call.set_brightness(pct);
+          call.perform();
